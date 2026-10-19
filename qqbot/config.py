@@ -141,7 +141,7 @@ class Settings:
     autoreply_enabled: bool = field(default_factory=lambda: os.getenv("AUTO_REPLY_ENABLED", "1") == "1")
     autoreply_allowlist: tuple[str, ...] = field(default_factory=lambda: _csv("AUTO_REPLY_ALLOWLIST", ""))
     autoreply_gap: float = field(default_factory=lambda: float(os.getenv("AUTO_REPLY_GAP", "1.2")))
-    autoreply_history: int = field(default_factory=lambda: int(os.getenv("AUTO_REPLY_HISTORY", "30")))
+    autoreply_history: int = field(default_factory=lambda: int(os.getenv("AUTO_REPLY_HISTORY", "80")))
     autoreply_stale: float = field(default_factory=lambda: float(os.getenv("AUTO_REPLY_STALE", "90")))
 
     # 回复形态：允许她自己分条发、说完再补一句
