@@ -158,7 +158,8 @@ class MemoryService:
         k = k or settings.memory_recall_k
         terms = self.terms(text)
         facts = self.store.search_memories(user_id=uid, terms=terms, limit=k, max_age_days=3650, persona=_p())
-        events = self.store.events(user_id=uid, limit=max(4, k // 2), persona=_p())
+        k_events = max(2, int(settings.memory_events_k))
+        events = self.store.events(user_id=uid, limit=max(6, k_events + 4), persona=_p())
         if terms:
             keywords = [t for t in terms if len(t) >= 2]
             scored: list[tuple[int, dict[str, Any]]] = []
@@ -171,9 +172,9 @@ class MemoryService:
             picked = [item for _, item in scored[:4]]
             if picked:
                 events = picked + [e for e in events if e not in picked]
-        days = self.store.day_summaries(limit=3, persona=_p())
-        notes = self.store.day_notes(uid, limit=3, persona=_p())
-        return {"facts": facts, "events": events[:6], "days": days, "notes": notes}
+        days = self.store.day_summaries(limit=max(1, int(settings.memory_days_k)), persona=_p())
+        notes = self.store.day_notes(uid, limit=max(1, int(settings.memory_notes_k)), persona=_p())
+        return {"facts": facts, "events": events[:k_events], "days": days, "notes": notes}
 
     def format_block(self, recall: dict[str, Any]) -> str:
         lines: list[str] = []

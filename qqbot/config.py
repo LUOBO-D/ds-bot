@@ -173,7 +173,16 @@ class Settings:
         default_factory=lambda: int(os.getenv("MEMORY_MEMO_MAX_MSGS", "120"))
     )
     memory_memo_max_chars: int = field(
-        default_factory=lambda: int(os.getenv("MEMORY_MEMO_MAX_CHARS", "900"))
+        default_factory=lambda: int(os.getenv("MEMORY_MEMO_MAX_CHARS", "1200"))
+    )
+    memory_events_k: int = field(
+        default_factory=lambda: int(os.getenv("MEMORY_EVENTS_K", "8"))
+    )
+    memory_days_k: int = field(
+        default_factory=lambda: int(os.getenv("MEMORY_DAYS_K", "3"))
+    )
+    memory_notes_k: int = field(
+        default_factory=lambda: int(os.getenv("MEMORY_NOTES_K", "3"))
     )
     reflection_enabled: bool = field(default_factory=lambda: os.getenv("REFLECTION_ENABLED", "1") == "1")
     mood_enabled: bool = field(default_factory=lambda: os.getenv("MOOD_ENABLED", "1") == "1")

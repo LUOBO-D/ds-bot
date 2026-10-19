@@ -40,7 +40,7 @@
 | `AUTO_REPLY_ENABLED` | `1` | 总开关 |
 | `AUTO_REPLY_ALLOWLIST` | 空 | 空 = 不回复；`*`/`all`/`friends` = 所有好友；或逗号分隔 QQ 号 |
 | `AUTO_REPLY_GAP` | `1.2` | 连续消息的静默去抖（秒） |
-| `AUTO_REPLY_HISTORY` | `30` | 注入的历史条数 |
+| `AUTO_REPLY_HISTORY` | `80` | 注入的历史条数（每条消息约 20~60 tokens，调大更连贯、更贵） |
 | `AUTO_REPLY_STALE` | `90` | 超过该秒数的积压消息不再回复 |
 | `REPLY_MULTI` | `1` | 允许分条发送 |
 | `REPLY_MULTI_MAX` | `4` | 最多几条 |
@@ -54,12 +54,15 @@
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PERSONA_DEFAULT` | `xiaojingyu` | 默认角色卡 slug（`assets/personas/<slug>.md`） |
-| `MEMORY_RECALL_K` | `8` | 每轮注入的事实条数 |
+| `MEMORY_RECALL_K` | `12` | 每轮注入的事实条数 |
+| `MEMORY_EVENTS_K` | `8` | 每轮注入的情节事件条数 |
+| `MEMORY_DAYS_K` | `3` | 注入最近几天的全局日结 |
+| `MEMORY_NOTES_K` | `3` | 注入几条「和你有关」的按人日结 |
 | `MEMORY_MEMO_ENABLED` | `1` | 当天备忘开关 |
 | `MEMORY_MEMO_MIN_MSGS` | `6` | 至少积累多少条新消息才压缩 |
 | `MEMORY_MEMO_MIN_SECONDS` | `180` | 两次压缩的最小间隔 |
 | `MEMORY_MEMO_MAX_MSGS` | `120` | 每批压缩的最大消息数 |
-| `MEMORY_MEMO_MAX_CHARS` | `900` | 备忘字数上限（超出截断） |
+| `MEMORY_MEMO_MAX_CHARS` | `1200` | 当天备忘字数上限（超出截断；这是压缩整个白天的上限） |
 | `REFLECTION_ENABLED` | `1` | 每轮对话后抽取事实/事件 |
 | `MOOD_ENABLED` | `1` | 情绪系统 |
 | `LIFE_ENABLED` | `1` | 生活线 |
