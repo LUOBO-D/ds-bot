@@ -1,0 +1,21 @@
+{
+  "_doc": "表情库。kind=face 用 QQ 内置表情编号；kind=image 指向本目录图片文件（以表情包形式发送）。tags 用来随机挑选。face_id 请以实际 QQ 版本为准，可在真机验证后调整。",
+  "items": [
+    { "id": "face-14",  "kind": "face", "face_id": 14, "label": "微笑",   "tags": ["笑", "默认", "友好"] },
+    { "id": "face-13",  "kind": "face", "face_id": 13, "label": "呲牙",   "tags": ["笑", "开心"] },
+    { "id": "face-12",  "kind": "face", "face_id": 12, "label": "调皮",   "tags": ["笑", "坏"] },
+    { "id": "face-6",   "kind": "face", "face_id": 6,  "label": "害羞",   "tags": ["可爱", "腼腆"] },
+    { "id": "face-21",  "kind": "face", "face_id": 21, "label": "可爱",   "tags": ["可爱"] },
+    { "id": "face-20",  "kind": "face", "face_id": 20, "label": "偷笑",   "tags": ["笑", "坏"] },
+    { "id": "face-44",  "kind": "face", "face_id": 44, "label": "坏笑",   "tags": ["笑", "坏"] },
+    { "id": "face-178", "kind": "face", "face_id": 178, "label": "斜眼笑", "tags": ["无语", "搞笑"] },
+    { "id": "face-26",  "kind": "face", "face_id": 26, "label": "惊恐",   "tags": ["惊讶"] },
+    { "id": "face-49",  "kind": "face", "face_id": 49, "label": "委屈",   "tags": ["难过", "撒娇"] },
+    { "id": "face-9",   "kind": "face", "face_id": 9,  "label": "大哭",   "tags": ["难过"] },
+    { "id": "face-66",  "kind": "face", "face_id": 66, "label": "爱心",   "tags": ["喜欢"] },
+    { "id": "face-63",  "kind": "face", "face_id": 63, "label": "玫瑰",   "tags": ["喜欢"] },
+    { "id": "face-79",  "kind": "face", "face_id": 79, "label": "强",     "tags": ["赞"] },
+    { "id": "face-89",  "kind": "face", "face_id": 89, "label": "OK",     "tags": ["赞", "同意"] },
+    { "id": "face-75",  "kind": "face", "face_id": 75, "label": "月亮",   "tags": ["晚安"] }
+  ]
+}

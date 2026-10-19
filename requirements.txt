@@ -1,0 +1,6 @@
+fastapi==0.146.0
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+python-dotenv==1.2.4
+websockets==17.2
+sherpa-onnx==1.13.8

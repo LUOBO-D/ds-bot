@@ -1,0 +1,39 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# ---- 本地配置与密钥（永远不要提交）----
+.env
+.env.local
+*.pem
+*.key
+cookies.json
+
+# ---- 运行时数据 ----
+data/
+logs/
+test_cache/
+.cache/
+.tmp/
+.research/
+.qzone/
+qrcode.png
+qzone-login.png
+
+# ---- 体积大的本地依赖（按 docs/SETUP.md 自行下载/安装）----
+models/
+tools/silk/
+napcat/
+napcat-qq/
+services/*
+!services/README.md
+
+# ---- Node ----
+node_modules/
+
+# ����̬����ǰ����Ľ�ɫ��ָ��
+assets/personas/active.json
