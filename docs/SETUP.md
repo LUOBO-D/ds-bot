@@ -149,16 +149,13 @@ QZONE_PLAYWRIGHT_CHANNEL=msedge
 启动：`npm run dev`，然后回到主项目：
 
 1. 启动桥接（需要 NapCat 已登录）
-2. 取 Cookie：`GET /api/napcat/cookies?domain=qzone.qq.com`
-3. 把返回的 `raw.cookies` 写进 `.qzone/cookies.json`：
-   ```json
-   { "last_used": 1700000000, "cookies": { "...": "..." } }
-   ```
-   （bridge 里有辅助接口，也可以手动放）
-4. 重启 sidecar，日志出现「检测到已缓存 Cookie，已登录」即成功
+2. 取 Cookie：`GET /api/napcat/cookies?domain=qzone.qq.com`，返回 `raw.cookies` 字符串
+3. 交给 sidecar：`POST /api/qzone/cookie`，body 为 `{"cookie": "<raw.cookies>"}`
+   （如果接口不可用，也可以手动写 `.qzone/cookies.json`：
+   `{ "last_used": 1700000000, "cookies": { "...": "..." } }`）
+4. 重启 sidecar，日志出现「检测到已缓存 Cookie，已登录」即成功；`GET /api/qzone/status` 可查状态
 
-> 更省事的做法：先启动主项目，再调用 `POST /api/qzone/login_cookie`（若存在）走内置注入流程，详见 [docs/PROACTIVE.md](PROACTIVE.md)。
-> 二维码登录也可用，但 Playwright 扫码超时 300 秒后会退出。
+> 二维码登录也可用（`POST /api/qzone/qr`），但 Playwright 扫码超时 300 秒后会退出，所以推荐 Cookie 注入。
 
 ### 6.2 本地语音识别（听语音）
 
