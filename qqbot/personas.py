@@ -15,7 +15,7 @@ from typing import Any
 
 from .config import settings
 
-FALLBACK_PERSONA = "shenzhiwei"
+FALLBACK_PERSONA = "xiaojingyu"
 
 # 卡里没写「名字：」时的兜底显示名
 KNOWN_NAMES = {

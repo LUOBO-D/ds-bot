@@ -53,7 +53,7 @@
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `PERSONA_DEFAULT` | `shenzhiwei` | 默认角色卡 slug（`assets/personas/<slug>.md`） |
+| `PERSONA_DEFAULT` | `xiaojingyu` | 默认角色卡 slug（`assets/personas/<slug>.md`） |
 | `MEMORY_RECALL_K` | `8` | 每轮注入的事实条数 |
 | `MEMORY_MEMO_ENABLED` | `1` | 当天备忘开关 |
 | `MEMORY_MEMO_MIN_MSGS` | `6` | 至少积累多少条新消息才压缩 |

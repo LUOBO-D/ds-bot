@@ -29,7 +29,7 @@ assets/personas/
 └── xiaojingyu.md      # 小鲸鱼（DeepSeek 小鲸鱼，软糯短句）
 ```
 
-- `active.json` 里写 `slug`；没有这个文件时按 `.env` 的 `PERSONA_DEFAULT`，再不行取第一张卡。
+- `active.json` 里写 `slug`；没有这个文件时按 `.env` 的 `PERSONA_DEFAULT`（默认 `xiaojingyu`），再不行取第一张卡。
 - 角色正文 = 整份 Markdown，会被原样塞进 system prompt 的 persona 段。
 - 每次请求都重新读卡，所以改完立刻生效；桥接不用重启。
 

@@ -113,7 +113,7 @@ curl -H "Authorization: Bearer <ADMIN_TOKEN>" http://127.0.0.1:3001/api/state
 
 ### 5. 跟她说话
 
-用你的 QQ 私聊这个机器人小号即可。默认角色是「沈知微」，也可以换成「小鲸鱼」：
+用你的 QQ 私聊这个机器人小号即可。默认角色是「小鲸鱼」（可在 `.env` 改 `PERSONA_DEFAULT`），也可以切换：
 在 QQ 里发 `角色列表` / `切换角色 小鲸鱼`。
 
 ## 接入你自己的 API
