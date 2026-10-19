@@ -53,8 +53,14 @@ flowchart LR
 
 ## 快速开始
 
-> 完整步骤（含 NapCat 安装、扫码登录、反向 WS 配置、排错）见 **[docs/SETUP.md](docs/SETUP.md)**。
-> 这里是最短路径。
+**按你的情况选一份教程：**
+
+| 你是 | 看这份 | 花多久 |
+| --- | --- | --- |
+| 没装过 Python / 只想快点用上 | **[docs/QUICKSTART.md](docs/QUICKSTART.md)**（小白版，鼠标点点点） | 10 分钟 |
+| 会命令行 / 想自己改配置、接别的模型 | **[docs/SETUP.md](docs/SETUP.md)**（完整部署）+ [docs/CONFIG.md](docs/CONFIG.md) | 30 分钟 |
+
+下面是最短路径的速查版。
 
 ### 0. 准备
 
@@ -63,19 +69,24 @@ flowchart LR
 - [NapCatQQ](https://github.com/NapNeko/NapCatQQ)（推荐用 OneKey 安装器）
 - 一个大模型 API Key（默认 DeepSeek：<https://platform.deepseek.com>）
 
-### 1. 装依赖
+### 1. 一键安装（推荐）
 
 ```powershell
 git clone https://github.com/LUOBO-D/ds-bot.git
 cd ds-bot
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\install.bat
 ```
+
+双击也行。它会自动：检查 Python → 建 `.venv` → 装依赖 → 生成 `.env`（含随机 `ADMIN_TOKEN`）→ 下载 NapCat 一键安装器。
+
+装完按提示双击 `napcat-onekey\NapCatInstaller.exe`，等它把 QQ 和 NapCat 装好。
+
+> 不想用脚本就手动来：`python -m venv .venv` → `.venv\Scripts\python.exe -m pip install -r requirements.txt`
+> → `copy .env.example .env`。
 
 ### 2. 配置
 
 ```powershell
-copy .env.example .env
 notepad .env
 ```
 
@@ -86,17 +97,36 @@ DEEPSEEK_API_KEY=sk-你的key
 AUTO_REPLY_ALLOWLIST=10001        # 你自己的 QQ 号；写 * 表示所有好友
 ```
 
-### 3. 起 NapCat 并登录小号
+### 3. 一键启动
 
-用 NapCat OneKey 安装器装好后启动，扫码登录小号，然后在 **WebUI（默认 `http://127.0.0.1:6099`）**
-添加一个 **WebSocket 客户端**：
+```powershell
+.\start.bat
+```
+
+双击也行。它会自动拉起 NapCat（如果本机有启动脚本）+ 桥接服务，并打印 WebUI 地址和 API Token。
+第一次启动会弹 QQ 登录窗口：扫码，或用 `start.bat -Account 你的小号QQ` 走快速登录。
+
+装完网关后，在 **NapCat WebUI（默认 `http://127.0.0.1:6099`）** 添加一个 **WebSocket 客户端**：
 
 ```
 地址：ws://127.0.0.1:3001/onebot/v11/ws
 消息格式：array
 ```
 
-### 4. 起桥接
+### 4. 验证
+
+看到 `gateway connected (self_id=...)` 就说明通了：
+
+```powershell
+curl -H "Authorization: Bearer <ADMIN_TOKEN>" http://127.0.0.1:3001/api/state
+```
+
+`ADMIN_TOKEN` 在 `.env` 里（`install.bat` 会自动生成）。
+
+> 想开语音识别：`powershell -File scripts\fetch_asr.ps1` 下载模型，再在 `.env` 设 `ASR_ENABLED=1`。
+> 停止：双击 `stop.bat`（`stop.bat -All` 连 QQ 一起关）。
+
+
 
 ```powershell
 .\start.ps1
