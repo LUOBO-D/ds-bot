@@ -34,6 +34,8 @@ class Keeper:
         memory: MemoryService,
         proactive: Any | None = None,
         social: Any | None = None,
+        personality: Any | None = None,
+        profile: Any | None = None,
     ) -> None:
         self.store = store
         self.mood = mood
@@ -41,6 +43,8 @@ class Keeper:
         self.memory = memory
         self.proactive = proactive
         self.social = social
+        self.personality = personality
+        self.profile = profile
         self._tasks: list[asyncio.Task[Any]] = []
         self.stats: dict[str, Any] = {
             "ticks": 0,
@@ -106,6 +110,27 @@ class Keeper:
             nightly = await self.maybe_nightly(force=force)
             if nightly:
                 result["nightly"] = nightly
+        if self.profile is not None and getattr(settings, "profile_enabled", True):
+            try:
+                prof = await self.profile.tick(force=force)
+                if prof:
+                    result["profile"] = prof
+            except Exception:  # noqa: BLE001
+                self.stats["errors"] += 1
+                log.exception("个人主页维护异常")
+        if self.personality is not None and settings.personality_enabled:
+            try:
+                today = datetime.now().strftime("%Y-%m-%d")
+                if self.store.get_kv("traits_settle_day") != today:
+                    settled = self.personality.settle()
+                    self.store.set_kv("traits_settle_day", today)
+                    result["traits"] = settled
+                narrative = await self.personality.write_narrative()
+                if narrative.get("ok"):
+                    result["narrative"] = narrative.get("narrative")
+            except Exception:  # noqa: BLE001
+                self.stats["errors"] += 1
+                log.exception("性格结算异常")
         if self.social is not None and settings.social_enabled:
             try:
                 browsed = await self.social.tick(force=force)
@@ -154,7 +179,11 @@ class Keeper:
                     await self.memory.update_memo(uid, name=str(uid), force=True)
                 except Exception:  # noqa: BLE001
                     log.exception("日结前更新当天备忘失败 uid=%s", uid)
-                result = await self.memory.nightly(today, uid=uid)
+                try:
+                    result = await self.memory.nightly(today, uid=uid)
+                except Exception as exc:  # noqa: BLE001
+                    log.exception("按人日结失败 uid=%s", uid)
+                    result = {"error": repr(exc)}
                 per_user[str(uid)] = result.get("summary") or result.get("skipped") or result.get("error")
         if per_user:
             out = dict(out or {})

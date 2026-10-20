@@ -38,6 +38,7 @@
 | 表情包 | 好友发来的表情包按喜好收藏，聊天时按概率发出去 | [STICKERS](docs/STICKERS.md) |
 | 主动行为 | 戳一戳、自主发说说、刷好友空间、点赞评论（默认关闭） | [PROACTIVE](docs/PROACTIVE.md) |
 | QQ 空间 | 发说说、看好友动态、点赞评论（需要 onebot-qzone sidecar） | [PROACTIVE](docs/PROACTIVE.md) |
+| 个人主页 | 自己写个性签名（头像只读，不给她改） | [PROFILE](docs/PROFILE.md) |
 
 ## 架构
 
@@ -53,14 +54,8 @@ flowchart LR
 
 ## 快速开始
 
-**按你的情况选一份教程：**
-
-| 你是 | 看这份 | 花多久 |
-| --- | --- | --- |
-| 没装过 Python / 只想快点用上 | **[docs/QUICKSTART.md](docs/QUICKSTART.md)**（小白版，鼠标点点点） | 10 分钟 |
-| 会命令行 / 想自己改配置、接别的模型 | **[docs/SETUP.md](docs/SETUP.md)**（完整部署）+ [docs/CONFIG.md](docs/CONFIG.md) | 30 分钟 |
-
-下面是最短路径的速查版。
+> 完整步骤（含 NapCat 安装、扫码登录、反向 WS 配置、排错）见 **[docs/SETUP.md](docs/SETUP.md)**。
+> 这里是最短路径。
 
 ### 0. 准备
 
@@ -69,24 +64,19 @@ flowchart LR
 - [NapCatQQ](https://github.com/NapNeko/NapCatQQ)（推荐用 OneKey 安装器）
 - 一个大模型 API Key（默认 DeepSeek：<https://platform.deepseek.com>）
 
-### 1. 一键安装（推荐）
+### 1. 装依赖
 
 ```powershell
 git clone https://github.com/LUOBO-D/ds-bot.git
 cd ds-bot
-.\install.bat
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
-
-双击也行。它会自动：检查 Python → 建 `.venv` → 装依赖 → 生成 `.env`（含随机 `ADMIN_TOKEN`）→ 下载 NapCat 一键安装器。
-
-装完按提示双击 `napcat-onekey\NapCatInstaller.exe`，等它把 QQ 和 NapCat 装好。
-
-> 不想用脚本就手动来：`python -m venv .venv` → `.venv\Scripts\python.exe -m pip install -r requirements.txt`
-> → `copy .env.example .env`。
 
 ### 2. 配置
 
 ```powershell
+copy .env.example .env
 notepad .env
 ```
 
@@ -97,36 +87,28 @@ DEEPSEEK_API_KEY=sk-你的key
 AUTO_REPLY_ALLOWLIST=10001        # 你自己的 QQ 号；写 * 表示所有好友
 ```
 
-### 3. 一键启动
+### 3. 起 NapCat 并登录小号
 
-```powershell
-.\start.bat
-```
-
-双击也行。它会自动拉起 NapCat（如果本机有启动脚本）+ 桥接服务，并打印 WebUI 地址和 API Token。
-第一次启动会弹 QQ 登录窗口：扫码，或用 `start.bat -Account 你的小号QQ` 走快速登录。
-
-装完网关后，在 **NapCat WebUI（默认 `http://127.0.0.1:6099`）** 添加一个 **WebSocket 客户端**：
+用 NapCat OneKey 安装器装好后启动，扫码登录小号，然后在 **WebUI（默认 `http://127.0.0.1:6099`）**
+添加一个 **WebSocket 客户端**：
 
 ```
 地址：ws://127.0.0.1:3001/onebot/v11/ws
 消息格式：array
 ```
 
-### 4. 验证
+### 4. 起桥接
 
-看到 `gateway connected (self_id=...)` 就说明通了：
+**推荐：一条命令全起（NapCat + QQ 空间 sidecar + 桥接）**
 
 ```powershell
-curl -H "Authorization: Bearer <ADMIN_TOKEN>" http://127.0.0.1:3001/api/state
+.\start-all.bat                 # 已经在跑的会自动跳过
+.\start-all.ps1 -CheckOnly      # 只看端口状态，不启动
 ```
 
-`ADMIN_TOKEN` 在 `.env` 里（`install.bat` 会自动生成）。
+`start-all` 会：① 端口 6099 没监听时拉起 `napcat-qq\start-napcat.bat -q <账号>`；② 5700 没监听时拉起 `services\onebot-qzone`；③ 前台启动桥接并打印管理 token。停止用 `.\stop-all.bat`（加 `-WithQQ` 连 QQ 一起关）。
 
-> 想开语音识别：`powershell -File scripts\fetch_asr.ps1` 下载模型，再在 `.env` 设 `ASR_ENABLED=1`。
-> 停止：双击 `stop.bat`（`stop.bat -All` 连 QQ 一起关）。
-
-
+也可以只起桥接：
 
 ```powershell
 .\start.ps1
@@ -140,6 +122,12 @@ curl -H "Authorization: Bearer <ADMIN_TOKEN>" http://127.0.0.1:3001/api/state
 ```
 
 `ADMIN_TOKEN` 在 `.env` 里（首次启动留空会自动生成）。
+
+> 空间功能报 502 / Cookie 过期时，跑一次：
+> ```powershell
+> .venv\Scripts\python.exe scripts\refresh_qzone_cookie.py --restart
+> ```
+> 它会从 NapCat 重新取 qzone Cookie 写进 `.qzone\cookies.json`，并重启 sidecar，不用扫码。
 
 ### 5. 跟她说话
 
@@ -218,16 +206,19 @@ ds-bot/
 │  ├─ vision.py           # 识图（OCR + 视觉模型）
 │  ├─ asr.py              # 语音转写（SenseVoice / Paraformer）
 │  ├─ stickers.py         # 表情包库
+│  ├─ profile.py          # 个人主页（签名；头像只读）
 │  ├─ store.py            # SQLite
 │  └─ tools.py            # 发送、查询、限速
 ├─ assets/
 │  ├─ personas/           # 角色卡（*.md）+ active.json
 │  └─ stickers/manifest.json
 ├─ docs/                  # 设计与使用文档
-├─ scripts/               # 安装 / 基准脚本
+├─ scripts/               # 安装 / 基准 / 空间 Cookie 刷新脚本
 ├─ tests/                 # 假网关 + e2e
 ├─ run.py                 # 启动入口
-├─ start.ps1              # Windows 一键启动
+├─ start.ps1              # 只启动桥接
+├─ start-all.ps1/.bat     # 一键启动：NapCat + 空间 sidecar + 桥接
+├─ stop-all.ps1/.bat      # 一键停止
 ├─ requirements.txt
 └─ .env.example
 ```

@@ -140,13 +140,20 @@ class Settings:
     # 实时自动回复
     autoreply_enabled: bool = field(default_factory=lambda: os.getenv("AUTO_REPLY_ENABLED", "1") == "1")
     autoreply_allowlist: tuple[str, ...] = field(default_factory=lambda: _csv("AUTO_REPLY_ALLOWLIST", ""))
-    autoreply_gap: float = field(default_factory=lambda: float(os.getenv("AUTO_REPLY_GAP", "1.2")))
+    autoreply_gap: float = field(default_factory=lambda: float(os.getenv("AUTO_REPLY_GAP", "2.5")))
+    autoreply_think_min: float = field(
+        default_factory=lambda: float(os.getenv("AUTO_REPLY_THINK_MIN", "2.0"))
+    )
+    autoreply_think_max: float = field(
+        default_factory=lambda: float(os.getenv("AUTO_REPLY_THINK_MAX", "3.0"))
+    )
     autoreply_history: int = field(default_factory=lambda: int(os.getenv("AUTO_REPLY_HISTORY", "80")))
     autoreply_stale: float = field(default_factory=lambda: float(os.getenv("AUTO_REPLY_STALE", "90")))
 
     # 回复形态：允许她自己分条发、说完再补一句
     reply_multi: bool = field(default_factory=lambda: os.getenv("REPLY_MULTI", "1") == "1")
-    reply_multi_max: int = field(default_factory=lambda: int(os.getenv("REPLY_MULTI_MAX", "4")))
+    reply_multi_max: int = field(default_factory=lambda: int(os.getenv("REPLY_MULTI_MAX", "0")))
+    reply_quote_enabled: bool = field(default_factory=lambda: os.getenv("REPLY_QUOTE_ENABLED", "1") == "1")
     reply_bubble_delay_min: float = field(
         default_factory=lambda: float(os.getenv("REPLY_BUBBLE_DELAY_MIN", "0.5"))
     )
@@ -186,6 +193,45 @@ class Settings:
     )
     reflection_enabled: bool = field(default_factory=lambda: os.getenv("REFLECTION_ENABLED", "1") == "1")
     mood_enabled: bool = field(default_factory=lambda: os.getenv("MOOD_ENABLED", "1") == "1")
+    mood_style_map: bool = field(default_factory=lambda: os.getenv("MOOD_STYLE_MAP", "1") == "1")
+    mood_fatigue_per_reply: float = field(
+        default_factory=lambda: float(os.getenv("MOOD_FATIGUE_PER_REPLY", "0.012"))
+    )
+    mood_episode_enabled: bool = field(
+        default_factory=lambda: os.getenv("MOOD_EPISODE_ENABLED", "1") == "1"
+    )
+    mood_episode_threshold: float = field(
+        default_factory=lambda: float(os.getenv("MOOD_EPISODE_THRESHOLD", "0.34"))
+    )
+    mood_episode_min_hours: float = field(
+        default_factory=lambda: float(os.getenv("MOOD_EPISODE_MIN_HOURS", "6"))
+    )
+    mood_episode_max_hours: float = field(
+        default_factory=lambda: float(os.getenv("MOOD_EPISODE_MAX_HOURS", "48"))
+    )
+
+    # 性格层：长期倾向 + 年轮留痕
+    personality_enabled: bool = field(
+        default_factory=lambda: os.getenv("PERSONALITY_ENABLED", "1") == "1"
+    )
+    traits_now_gain: float = field(default_factory=lambda: float(os.getenv("TRAITS_NOW_GAIN", "1.0")))
+    traits_base_gain: float = field(default_factory=lambda: float(os.getenv("TRAITS_BASE_GAIN", "0.6")))
+    traits_mark_min_weight: float = field(
+        default_factory=lambda: float(os.getenv("TRAITS_MARK_MIN_WEIGHT", "0.6"))
+    )
+    traits_max_dev: float = field(default_factory=lambda: float(os.getenv("TRAITS_MAX_DEV", "25")))
+    traits_now_return: float = field(
+        default_factory=lambda: float(os.getenv("TRAITS_NOW_RETURN", "0.06"))
+    )
+    traits_base_quiet_days: float = field(
+        default_factory=lambda: float(os.getenv("TRAITS_BASE_QUIET_DAYS", "60"))
+    )
+    traits_base_return: float = field(
+        default_factory=lambda: float(os.getenv("TRAITS_BASE_RETURN", "0.2"))
+    )
+    traits_narrative_days: float = field(
+        default_factory=lambda: float(os.getenv("TRAITS_NARRATIVE_DAYS", "7"))
+    )
     life_enabled: bool = field(default_factory=lambda: os.getenv("LIFE_ENABLED", "1") == "1")
     life_tick_seconds: int = field(default_factory=lambda: int(os.getenv("LIFE_TICK_SECONDS", "900")))
     life_event_probability: float = field(
@@ -223,6 +269,84 @@ class Settings:
     )
     qzone_feed_window_start: int = field(default_factory=lambda: int(os.getenv("QZONE_FEED_WINDOW_START", "10")))
     qzone_feed_window_end: int = field(default_factory=lambda: int(os.getenv("QZONE_FEED_WINDOW_END", "22")))
+
+    # 自发私聊：她自己想起他、来找他说话（低频，默认每天最多 1 条）
+    proactive_message_enabled: bool = field(
+        default_factory=lambda: os.getenv("PROACTIVE_MESSAGE_ENABLED", "1") == "1"
+    )
+    proactive_message_target: int = field(
+        default_factory=lambda: int(os.getenv("PROACTIVE_MESSAGE_TARGET") or 0)
+    )
+    proactive_message_daily_max: int = field(
+        default_factory=lambda: int(os.getenv("PROACTIVE_MESSAGE_DAILY_MAX", "1"))
+    )
+    proactive_message_window_start: int = field(
+        default_factory=lambda: int(os.getenv("PROACTIVE_MESSAGE_WINDOW_START", "7"))
+    )
+    proactive_message_window_end: int = field(
+        default_factory=lambda: int(os.getenv("PROACTIVE_MESSAGE_WINDOW_END", "24"))
+    )
+    proactive_message_idle_seconds: int = field(
+        default_factory=lambda: int(os.getenv("PROACTIVE_MESSAGE_IDLE_SECONDS", "5400"))
+    )
+    proactive_message_cooldown_seconds: int = field(
+        default_factory=lambda: int(os.getenv("PROACTIVE_MESSAGE_COOLDOWN_SECONDS", "14400"))
+    )
+    proactive_message_threshold: float = field(
+        default_factory=lambda: float(os.getenv("PROACTIVE_MESSAGE_THRESHOLD", "0.55"))
+    )
+
+    # 早安 / 晚安仪式（纯文字，各一天最多一次）
+
+    # 文生图（给主动消息配一张随手拍）
+    imagegen_enabled: bool = field(default_factory=lambda: os.getenv("IMAGEGEN_ENABLED", "1") == "1")
+    imagegen_provider: str = field(default_factory=lambda: os.getenv("IMAGEGEN_PROVIDER", "zhipu"))
+    imagegen_api_key: str = field(default_factory=lambda: os.getenv("IMAGEGEN_API_KEY", ""))
+    imagegen_base: str = field(
+        default_factory=lambda: os.getenv("IMAGEGEN_BASE", "https://open.bigmodel.cn/api/paas/v4")
+    )
+    imagegen_size: str = field(default_factory=lambda: os.getenv("IMAGEGEN_SIZE", "864x1152"))
+
+    # 聊天回复里也可以顺手拍一张（她自己判断需不需要）
+    image_reply_enabled: bool = field(
+        default_factory=lambda: os.getenv("IMAGE_REPLY_ENABLED", "1") == "1"
+    )
+    image_reply_daily_max: int = field(
+        default_factory=lambda: int(os.getenv("IMAGE_REPLY_DAILY_MAX", "6"))
+    )
+    image_reply_min_interval: float = field(
+        default_factory=lambda: float(os.getenv("IMAGE_REPLY_MIN_INTERVAL", "90"))
+    )
+    imagegen_style: str = field(default_factory=lambda: os.getenv("IMAGEGEN_STYLE", "anime"))
+    imagegen_model: str = field(default_factory=lambda: os.getenv("IMAGEGEN_MODEL", "flux"))
+    imagegen_timeout: float = field(default_factory=lambda: float(os.getenv("IMAGEGEN_TIMEOUT", "120")))
+    imagegen_retries: int = field(default_factory=lambda: int(os.getenv("IMAGEGEN_RETRIES", "3")))
+    imagegen_max_per_day: int = field(default_factory=lambda: int(os.getenv("IMAGEGEN_MAX_PER_DAY", "1")))
+    imagegen_dir: Path = field(default_factory=lambda: ROOT / "data" / "outbox")
+    # 自拍（带人物一致性）单独走一条线：默认阿里云百炼 wan2.7-image（支持参考图）
+    imagegen_selfie_provider: str = field(
+        default_factory=lambda: os.getenv("IMAGEGEN_SELFIE_PROVIDER", "dashscope")
+    )
+    imagegen_wan_key: str = field(default_factory=lambda: os.getenv("DASHSCOPE_API_KEY", ""))
+    imagegen_wan_model: str = field(
+        default_factory=lambda: os.getenv("IMAGEGEN_WAN_MODEL", "wan2.7-image")
+    )
+    imagegen_wan_base: str = field(
+        default_factory=lambda: os.getenv(
+            "IMAGEGEN_WAN_BASE", "https://dashscope.aliyuncs.com/api/v1"
+        )
+    )
+    imagegen_wan_size: str = field(default_factory=lambda: os.getenv("IMAGEGEN_WAN_SIZE", "2K"))
+    profile_enabled: bool = field(default_factory=lambda: os.getenv("PROFILE_ENABLED", "1") == "1")
+    profile_signature_hours: float = field(
+        default_factory=lambda: float(os.getenv("PROFILE_SIGNATURE_HOURS", "20"))
+    )
+    profile_signature_max: int = field(
+        default_factory=lambda: int(os.getenv("PROFILE_SIGNATURE_MAX", "24"))
+    )
+    imagegen_reference: Path = field(
+        default_factory=lambda: ROOT / "assets" / "personas" / "xiaojingyu-appearance.png"
+    )
 
     # 安全 / 限速
     min_send_interval: float = field(default_factory=lambda: float(os.getenv("QB_MIN_SEND_INTERVAL", "1.0")))

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 import threading
 import time
 from pathlib import Path
@@ -163,6 +164,19 @@ CREATE TABLE IF NOT EXISTS day_memo (
     updated_at   REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (day, user_id, persona)
 );
+
+CREATE TABLE IF NOT EXISTS trait_marks (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    at      INTEGER NOT NULL,
+    persona TEXT NOT NULL DEFAULT 'xiaojingyu',
+    kind    TEXT NOT NULL DEFAULT 'event',
+    source  TEXT,
+    note    TEXT,
+    dims    TEXT,
+    before  TEXT,
+    after   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trait_marks_at ON trait_marks(id DESC);
 CREATE INDEX IF NOT EXISTS idx_day_notes_user ON day_notes(user_id, id DESC);
 
 """
@@ -432,6 +446,7 @@ class Store:
         limit: int = 50,
         user_id: int | None = None,
         persona: str | None = None,
+        kind: str | None = None,
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 500))
         clauses = ["1=1"]
@@ -442,6 +457,9 @@ class Store:
         if persona:
             clauses.append("persona = ?")
             args.append(persona)
+        if kind:
+            clauses.append("kind = ?")
+            args.append(kind)
         sql = f"SELECT * FROM memories WHERE {' AND '.join(clauses)} ORDER BY id DESC LIMIT ?"
         args.append(limit)
         with self._lock:
@@ -934,6 +952,75 @@ class Store:
                 ),
             )
             self._db.commit()
+
+    # ------------------------------------------------------------ 性格年轮
+    def add_trait_mark(
+        self,
+        *,
+        persona: str | None,
+        kind: str,
+        source: str,
+        note: str,
+        dims: dict[str, float],
+        before: dict[str, float],
+        after: dict[str, float],
+    ) -> int:
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO trait_marks (at, persona, kind, source, note, dims, before, after)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    int(time.time()),
+                    persona or "xiaojingyu",
+                    kind,
+                    source,
+                    note,
+                    json.dumps(dims, ensure_ascii=False),
+                    json.dumps(before, ensure_ascii=False),
+                    json.dumps(after, ensure_ascii=False),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def trait_marks(self, *, limit: int = 20, persona: str | None = None) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 100))
+        sql = "SELECT * FROM trait_marks"
+        args: list[Any] = []
+        if persona:
+            sql += " WHERE persona = ?"
+            args.append(persona)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(limit)
+        with self._lock:
+            rows = self._db.execute(sql, args).fetchall()
+        out = []
+        for row in rows:
+            item = dict(row)
+            for key in ("dims", "before", "after"):
+                try:
+                    item[key] = json.loads(item.get(key) or "{}")
+                except Exception:
+                    item[key] = {}
+            out.append(item)
+        return out
+
+    def get_trait_mark(self, mark_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM trait_marks WHERE id = ?", (int(mark_id),)).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        for key in ("dims", "before", "after"):
+            try:
+                item[key] = json.loads(item.get(key) or "{}")
+            except Exception:
+                item[key] = {}
+        return item
+
+    def delete_trait_mark(self, mark_id: int) -> bool:
+        with self._lock:
+            cur = self._db.execute("DELETE FROM trait_marks WHERE id = ?", (int(mark_id),))
+            return cur.rowcount > 0
 
     def upsert_day_memo(
         self,

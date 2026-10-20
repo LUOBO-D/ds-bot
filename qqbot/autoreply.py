@@ -134,6 +134,8 @@ class AutoReply:
         social: Any | None = None,
         asr: Any | None = None,
         stickers: Any | None = None,
+        personality: Any | None = None,
+        imagegen: Any | None = None,
     ) -> None:
         self.ob = ob
         self.store = store
@@ -141,12 +143,14 @@ class AutoReply:
         self.brain = brain
         self.memory = memory
         self.mood = mood
+        self.personality = personality
         self.life = life
         self.proactive = proactive
         self.vision = vision
         self.social = social
         self.asr = asr
         self.stickers = stickers
+        self.imagegen = imagegen
         self.rng = random.Random()
         self.enabled = settings.autoreply_enabled
         raw = [str(item).strip() for item in settings.autoreply_allowlist]
@@ -154,6 +158,8 @@ class AutoReply:
         self.allowlist_all_friends = any(item.lower() in ("*", "all", "friends") for item in raw)
         self._friends: set[int] = set()
         self._friends_at = 0.0
+        self._friends_block = ""
+        self._friends_block_at = 0.0
         self._pending: dict[int, dict[str, Any]] = {}
         self._seen: list[int] = []
         self._queue: asyncio.Queue[dict[str, Any]] | None = None
@@ -288,6 +294,10 @@ class AutoReply:
             slot["parts"].append(text)
         slot["name"] = nick
         slot["last"] = time.time()
+        # 每次新消息都重置「思考时间」：2~3 秒内如果又来一条，就并进同一次回复
+        think_min = min(settings.autoreply_think_min, settings.autoreply_think_max)
+        think_max = max(settings.autoreply_think_min, settings.autoreply_think_max)
+        slot["think_at"] = slot["last"] + self.rng.uniform(max(0.2, think_min), max(0.3, think_max))
         log.info("收到待回复消息 user=%s mid=%s text=%r", uid, message_id, text[:80])
 
     async def _handle_command(self, uid: int, text: str) -> None:
@@ -341,7 +351,8 @@ class AutoReply:
                 lock = self._locks.setdefault(uid, asyncio.Lock())
                 if lock.locked():
                     continue
-                if now - slot["last"] < settings.autoreply_gap:
+                deadline = float(slot.get("think_at") or (slot["last"] + settings.autoreply_gap))
+                if now < deadline:
                     continue
                 slot["busy"] = True
                 asyncio.create_task(self._respond(uid, slot, lock), name=f"autoreply-{uid}")
@@ -456,7 +467,7 @@ class AutoReply:
                 except Exception:
                     log.exception("聊天时刷空间失败")
                 social_text = "\n\n".join(piece for piece in (acted, seen) if piece)
-            ctx = self._context(uid, user_text, social_text=social_text)
+            ctx = await self._context(uid, user_text, social_text=social_text)
             avoid = [
                 str(item.get("content") or "")
                 for item in history
@@ -470,8 +481,10 @@ class AutoReply:
                 multi=settings.reply_multi,
                 multi_max=settings.reply_multi_max,
                 avoid_texts=avoid,
+                allow_image=settings.image_reply_enabled,
                 **ctx,
             )
+            quote_index = out.get("quote_index")
             bubbles = [bubble.strip() for bubble in (out.get("bubbles") or []) if bubble.strip()]
             if bubbles and avoid and _too_similar(bubbles, avoid):
                 # 和她以前说过的太像，重生成一次（换个说法）
@@ -484,17 +497,39 @@ class AutoReply:
                         multi=settings.reply_multi,
                         multi_max=settings.reply_multi_max,
                         avoid_texts=avoid,
+                        allow_image=settings.image_reply_enabled,
                         **ctx,
                     )
                     fresh = [bubble.strip() for bubble in (retry.get("bubbles") or []) if bubble.strip()]
                     if fresh and not _too_similar(fresh, avoid):
                         bubbles = fresh
+                        quote_index = retry.get("quote_index") or quote_index
                         self.stats["repeats_avoided"] = int(self.stats.get("repeats_avoided") or 0) + 1
                         log.info("回复与历史过于相似，已重生成一次")
                 except Exception:
                     log.exception("重生成回复失败，沿用原回复")
             if not bubbles:
                 raise BrainError("大脑返回空回复")
+            pause = 0.0
+            if self.mood is not None:
+                try:
+                    pause = float(self.mood.style_tags().get("pause_seconds") or 0.0)
+                except Exception:  # noqa: BLE001
+                    pause = 0.0
+            if pause:
+                # 累了就回得慢一点，不是秒回
+                await asyncio.sleep(pause * self.rng.uniform(0.7, 1.3))
+            # 引用回复：她可以在回复开头写 [[引用]] / [[引用:2]]，这里换成真的 reply 段
+            quote_id: int | None = None
+            if quote_index:
+                inbound_ids = [
+                    int(ev["message_id"])
+                    for ev in (slot.get("events") or [])
+                    if isinstance(ev.get("message_id"), int)
+                ]
+                if inbound_ids:
+                    pick = min(max(1, int(quote_index)), len(inbound_ids))
+                    quote_id = inbound_ids[-pick]
             result: dict[str, Any] = {}
             for index, bubble in enumerate(bubbles):
                 if index:
@@ -502,13 +537,26 @@ class AutoReply:
                     delay = self.rng.uniform(settings.reply_bubble_delay_min, settings.reply_bubble_delay_max)
                     delay += min(1.2, len(bubble) / 60.0)
                     await asyncio.sleep(delay)
-                result = await self.actions.send_text("private", uid, bubble)
+                result = await self.actions.send_text(
+                    "private",
+                    uid,
+                    bubble,
+                    reply_to=quote_id if index == 0 else None,
+                )
+                if index == 0 and quote_id:
+                    self.stats["quotes"] = int(self.stats.get("quotes") or 0) + 1
+                    log.info("引用回复 user=%s quote_msg=%s", uid, quote_id)
                 self.stats["bubbles_sent"] = int(self.stats.get("bubbles_sent") or 0) + 1
             reply = "\n".join(bubbles)
             self.stats["replied"] += 1
             self.stats["last_reply_at"] = time.time()
             self.stats["last_bubbles"] = len(bubbles)
             self.stats["last_latency_ms"] = round((time.perf_counter() - t0) * 1000)
+            if self.mood is not None:
+                try:
+                    self.mood.spend()
+                except Exception:  # noqa: BLE001
+                    log.exception("情绪精力结算失败")
             log.info(
                 "已自动回复 user=%s latency=%sms bubbles=%s mid=%s reply=%r",
                 uid,
@@ -518,6 +566,11 @@ class AutoReply:
                 reply[:120],
             )
             self._spawn_reflection(uid, user_text, reply, name)
+            scene = out.get("image_scene") or ""
+            selfie = bool(out.get("image_selfie")) or self._scene_includes_self(scene)
+            if scene:
+                log.info("配图引擎：%s", "百炼 wan2.7（画面里有她）" if selfie else "CogView（纯场景）")
+            self._spawn_image_reply(uid, scene, bubbles=bubbles, selfie=selfie)
             self._spawn_sticker(uid)
             self._spawn_followup(uid, name, bubbles, ctx)
             self._spawn_feed_impulse(user_text)
@@ -568,10 +621,53 @@ class AutoReply:
         except Exception:
             log.exception("写入长期记忆失败")
 
-    def _context(self, uid: int, text: str, social_text: str | None = None) -> dict[str, str]:
-        """拼聊天时要用到的记忆 / 生活线 / 心情上下文。"""
-        ctx = {"memory_text": "", "memo_text": "", "life_text": "", "social_text": "", "mood_text": ""}
+    async def _friends_list_block(self) -> str:
+        """她的 QQ 好友名单（知道有谁，但不把别人的私事说出去）。缓存 600 秒。"""
+        now = time.time()
+        if self._friends_block and now - self._friends_block_at < 600:
+            return self._friends_block
         try:
+            data = await self.ob.get_friend_list()
+        except Exception:
+            log.exception("拉好友列表失败，沿用上次缓存")
+            return self._friends_block
+        self_id = int(getattr(self.ob, "self_id", 0) or 0)
+        lines: list[str] = []
+        for row in data if isinstance(data, list) else []:
+            if not isinstance(row, dict):
+                continue
+            try:
+                fid = int(row.get("user_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not fid or fid == self_id:
+                continue
+            name = str(row.get("remark") or row.get("nickname") or fid).strip()
+            lines.append(f"- {name}（QQ {fid}）")
+        if not lines:
+            return self._friends_block
+        self._friends_block = (
+            "你的 QQ 好友（你认得他们是谁；只有你自己主动提起、或对方问起时才自然带一句，"
+            "不要把别人的聊天内容和私事说出去）：\n" + "\n".join(lines[:30])
+        )
+        self._friends_block_at = now
+        return self._friends_block
+
+    async def _context(self, uid: int, text: str, social_text: str | None = None) -> dict[str, str]:
+        """拼聊天时要用到的记忆 / 生活线 / 心情上下文。"""
+        ctx = {
+            "memory_text": "",
+            "memo_text": "",
+            "life_text": "",
+            "social_text": "",
+            "mood_text": "",
+            "traits_text": "",
+            "friends_text": "",
+        }
+        ctx["friends_text"] = await self._friends_list_block()
+        try:
+            if self.personality is not None:
+                ctx["traits_text"] = self.personality.prompt_block()
             if self.memory is not None:
                 recall = self.memory.recall(uid, text)
                 ctx["memory_text"] = self.memory.format_block(recall)
@@ -609,6 +705,126 @@ class AutoReply:
                 await updater(uid, name=name)
         except Exception:
             log.exception("反思失败 user=%s", uid)
+
+    # ------------------------------------------------------------ 聊天里顺手拍一张
+    # 场景里出现「她本人」时自动走人物一致性引擎（百炼），否则走免费 CogView
+    _SELF_SCENE_RE = re.compile(
+        r"(自拍|我自己|我的样子|镜子里的我|镜头里的我|画面里的我|"
+        r"^我(?![的猫书桌窗杯稿电脑手机])|" + r"^(坐|站|趴|靠|蹲|躺|抬|低|笑|穿|抱|捧|托)|"
+        r"她(自己)?(坐|站|趴|靠|蹲|躺|笑|低头|抬头|看|穿|抱))"
+    )
+
+    @staticmethod
+    def _scene_includes_self(scene: str) -> bool:
+        text = " ".join(str(scene or "").split())
+        return bool(text) and bool(AutoReply._SELF_SCENE_RE.search(text))
+
+    _IMAGE_CLAIM_RE = re.compile(
+        r"(拍好|拍好|拍了|拍张|拍给你|拍给你看|发你一张|发你张|给你看|给你发|看看这个|这张图|给你拍)"
+    )
+
+    def _spawn_image_reply(
+        self,
+        uid: int,
+        scene: str,
+        *,
+        bubbles: list[str] | None = None,
+        selfie: bool = False,
+    ) -> None:
+        scene = (scene or "").strip()
+        if self.imagegen is None or not settings.image_reply_enabled:
+            return
+        if not scene and bubbles:
+            # 模型嘴上说「拍好啦」却没写 [[IMG: ...]]：从她那句话反推一个画面
+            claim = " ".join(str(item) for item in bubbles)
+            if self._IMAGE_CLAIM_RE.search(claim):
+                scene = "__derive__:" + claim[:300]
+        if not scene:
+            return
+        if not selfie and self._scene_includes_self(scene):
+            selfie = True
+        urgent = scene.startswith("__derive__:")
+        task = asyncio.create_task(
+            self._send_image_reply(uid, scene, urgent=urgent, selfie=selfie)
+        )
+        self._reflect_tasks.add(task)
+        task.add_done_callback(self._reflect_tasks.discard)
+
+    async def _send_image_reply(
+        self, uid: int, scene: str, *, urgent: bool = False, selfie: bool = False
+    ) -> None:
+        """先说话、再把图补上；失败就静默跳过（不能影响聊天）。"""
+        try:
+            if not getattr(self.imagegen, "enabled", False):
+                return
+            day = datetime.now().strftime("%Y-%m-%d")
+            if self.store.get_kv("replyimg.day") != day:
+                self.store.set_kv("replyimg.day", day)
+                self.store.set_kv("replyimg.count", 0)
+            count = int(self.store.get_kv("replyimg.count") or 0)
+            if count >= settings.image_reply_daily_max:
+                log.info("聊天配图跳过：今天额度用完了 count=%s", count)
+                return
+            last_key = f"replyimg.last.{uid}"
+            last_at = float(self.store.get_kv(last_key) or 0)
+            gap = time.time() - last_at
+            if not urgent and gap < settings.image_reply_min_interval:
+                log.info("聊天配图跳过：距上一张 %.0fs（冷却 %ss）", gap, settings.image_reply_min_interval)
+                return
+            mood_label = ""
+            if self.mood is not None:
+                try:
+                    mood_label = str(self.mood.label())
+                except Exception:  # noqa: BLE001
+                    mood_label = ""
+            if scene.startswith("__derive__:"):
+                claim = scene[len("__derive__:") :]
+                try:
+                    derived = await self.brain.complete(
+                        [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "你负责把她说的话翻译成一句画面描述。只输出画面本身，不超过 50 字。"
+                                    + (
+                                        "这是她的自拍：写她在做什么、在哪、什么表情，"
+                                        "不要写长相（长相由画师按设定画）。"
+                                        if selfie
+                                        else "不出现人、脸、手、文字。"
+                                    )
+                                ),
+                            },
+                            {
+                                "role": "user",
+                                "content": f"她刚对他说：{claim}\n她本来想给他看的是什么画面？",
+                            },
+                        ],
+                        temperature=0.6,
+                        max_tokens=90,
+                    )
+                    scene = " ".join((derived.get("text") or "").split())[:200]
+                except Exception:  # noqa: BLE001
+                    log.exception("推导画面失败")
+                    return
+                if not scene:
+                    return
+            started = time.perf_counter()
+            out = await self.imagegen.generate(scene, mood=mood_label, selfie=selfie)
+            if not out:
+                log.info("聊天配图失败，跳过 scene=%r", scene[:60])
+                return
+            await self.actions.send_image("private", uid, out["path"])
+            self.store.set_kv("replyimg.count", count + 1)
+            self.store.set_kv(last_key, time.time())
+            self.stats["images_sent"] = int(self.stats.get("images_sent") or 0) + 1
+            log.info(
+                "聊天里发了一张图 uid=%s ms=%s path=%s",
+                uid,
+                round((time.perf_counter() - started) * 1000),
+                out.get("path"),
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("聊天配图失败 uid=%s", uid)
 
     # ------------------------------------------------------------ 顺手甩个表情包
     def _spawn_sticker(self, uid: int) -> None:
@@ -686,7 +902,7 @@ class AutoReply:
         t0 = time.perf_counter()
         self._capture_memory(uid, text)
         history = self._history(uid, text)
-        ctx = self._context(uid, text)
+        ctx = await self._context(uid, text)
         out = await self.brain.chat(
             user_text=text,
             history=history,

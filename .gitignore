@@ -37,3 +37,4 @@ node_modules/
 
 # 运行态：当前激活的角色卡指针
 assets/personas/active.json
+qrcode-login.png

@@ -49,13 +49,18 @@ REFLECT_SYSTEM = """你是「{name}」的记忆整理器，只输出 JSON，不�
 输出格式（JSON）：
 {"facts":[{"content":"简短的事实或偏好","kind":"fact|preference|relationship|event","salience":0.1}],
  "events":[{"summary":"发生了什么，一句","emotion":"她当时的情绪一个词","salience":0.1}],
- "mood":{"valence_delta":0.0,"arousal_delta":0.0,"energy_delta":0.0,"note":"心情一句话"}}
+ "mood":{"valence_delta":0.0,"arousal_delta":0.0,"energy_delta":0.0,"note":"心情一句话"},
+ "traits":{"closeness":0,"talkativeness":0,"sensitivity":0,"tsundere":0,"stability":0},
+ "weight":0.0}
 
 规则：
 - facts 只记稳定的、以后用得上的（喜好、作息、工作、家人、约定、雷区、重要日期）；寒暄、天气、一次性的客套不要记。
 - facts 最多 3 条，events 最多 2 条；没有就返回空数组。
 - salience 0~1，越重要越高；日常闲聊给 0.2~0.4。
-- mood 的 delta 取 -1~1：被夸/被在意为正，被冷落/吵架为负；平时给 0。
+- mood 的 delta 取 -1~1：被夸/被在意为正，被冷落/吵架为负；**这一轮很平淡、没什么情绪起伏就给 0**，不要为了礼貌习惯性给正数。
+- 也会给她此刻的心情（见输入）：delta 要在此基础上合理，不要每次都往上加；累、被忽略、聊得没劲都可以给负。
+- traits 是这轮对她**性格倾向**的影响，每项 -3~3，日常闲聊全给 0；只有被认真对待、被冷落、吵架/和好、被当成很重要的人这类时刻才给非零（比如被陪伴 closeness +1、被敷衍 sensitivity +1、被哄好 stability +1）。
+- weight 0~1：这轮的分量。日常 0；有点触动 0.3；认真交心/明显受伤/和好 0.7~1。只有 weight 高时性格基线才会真的移动，别把随口一句当大事。
 - 全部用中文口语，不要出现"用户"这种词，用"他"或对方昵称。"""
 
 NIGHTLY_SYSTEM = """你是「{name}」的记忆整理器，只输出 JSON。
@@ -124,10 +129,11 @@ def _norm(text: str) -> str:
 
 
 class MemoryService:
-    def __init__(self, store: Store, brain: Brain, mood: Mood) -> None:
+    def __init__(self, store: Store, brain: Brain, mood: Mood, personality: Any = None) -> None:
         self.store = store
         self.brain = brain
         self.mood = mood
+        self.personality = personality
         self.stats: dict[str, Any] = {
             "reflects": 0,
             "facts": 0,
@@ -331,9 +337,17 @@ class MemoryService:
             return {"skipped": "brain not ready"}
         existing = self.store.memories(user_id=uid, limit=12, persona=_p())
         known = "\n".join(f"- {item.get('content')}" for item in existing) or "（暂无）"
+        mood_snap = self.mood.snapshot() if self.mood is not None else {}
+        mood_line = (
+            f"她此刻的心情：{mood_snap.get('label', '平常')}"
+            f"（愉悦 {mood_snap.get('valence', 0)}、精力 {mood_snap.get('energy', 0)}）"
+            if mood_snap
+            else ""
+        )
         payload = (
             f"对方（{name or uid}）说：{user_text}\n\n"
             f"{_self_name()}回答：{reply}\n\n"
+            f"{mood_line}\n"
             f"已经记住的事（别重复）：\n{known}"
         )
         try:
@@ -351,7 +365,7 @@ class MemoryService:
             return {"error": str(exc)}
 
         data = _parse_json(out.get("text") or "")
-        written = {"facts": 0, "events": 0}
+        written: dict[str, Any] = {"facts": 0, "events": 0}
         known_norm = {_norm(item.get("content") or "") for item in existing}
 
         for fact in (data.get("facts") or [])[:3]:
@@ -397,6 +411,20 @@ class MemoryService:
         mood_delta = data.get("mood") or {}
         if settings.mood_enabled and isinstance(mood_delta, dict):
             self.mood.apply_delta(mood_delta, note=str(mood_delta.get("note") or ""))
+
+        if self.personality is not None and isinstance(data.get("traits"), dict):
+            try:
+                note = (mood_delta.get("note") if isinstance(mood_delta, dict) else "") or ""
+                if not note and isinstance(data.get("events"), list) and data["events"]:
+                    note = str((data["events"][0] or {}).get("summary") or "")
+                written["traits"] = self.personality.nudge(
+                    data.get("traits") or {},
+                    source="reflect",
+                    note=str(note)[:200],
+                    weight=float(data.get("weight") or 0.0),
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("性格结算失败")
 
         self.stats["reflects"] += 1
         self.stats["facts"] += written["facts"]

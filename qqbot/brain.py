@@ -5,6 +5,7 @@
 """
 
 from __future__ import annotations
+import re
 
 import asyncio
 import json
@@ -29,16 +30,41 @@ DEFAULT_PERSONA = """你是「小鲸鱼」：一个蓝色头发、带着鲸鱼�
 """
 
 
-MULTI_RULES = """这条回复发几条、每条多长，由你按当下的情境自己决定，不用每次都拆成一样。
-- 只是接一句闲话、应一声、被夸了、道个晚安：1 条就够，短一点也行。
-- 有情绪、想多讲、想追问他、想逗他：拆成 2~4 条，像一口气连着说。
-- 他要你认真回答（讲道理、解释、安慰、说一件事的来龙去脉）：允许 1 条长一些（最多 120 字），别为了分条把一句话切碎。
-- 别为了凑条数拆句，也别条条只有两三个字；高兴就多一点，累就少一点。
-- 不要序号、不要 Markdown、不要括号里的内心戏。
+QUOTE_RULES = """你可以在回复时**引用**他说过的某条消息（QQ 里会显示成带引用的小框）。
+- 想针对某一句具体回应、或者他连着发了好几条你想挑其中一条回时，才引用；日常闲聊不用引用。
+- 要引用时，在回复最前面单独写标记：`[[引用]]` 表示引用他最后发的那条；`[[引用:2]]` 表示引用倒数第二条，以此类推。
+- 标记只写在最前面一次，不要在正文里出现；不引用就完全不要写。
+- 引用之后正文照常说，不要重复被引用的原话。"""
 
-格式：几条之间用三个竖线 ||| 分隔，直接输出消息本身。
+IMAGE_RULES = """如果你想让他看到某个画面（你桌上的、窗外的、手边的猫、刚做好的饭、刚收到的花），
+可以在回复最后另起一行写：[[IMG: 画面描述]]。
+- 画面只拍物件/场景，不出现人、不出现脸和手、不出现文字；
+- 一次最多一张；不想要就别写这一行。
+- 这一行不会被发出去，会变成一张图。
+- **说了就要写**：只要你的话里出现「拍了」「拍好啦」「给你看」「发你一张」「看看这个」这类说法，
+  就必须同时写 [[IMG: ...]]；只说不写等于没发，他会以为你在骗他。
+
+**自拍**：他想看你、问你要照片、夸你可爱、或者你自己想让他看到你现在的样子时，
+可以写 [[自拍: 你在做什么/在哪/什么表情]]，比如 [[自拍: 坐在台灯下改稿，抬头对着镜头笑]]。
+- 自拍会自动按你的设定图来画：蓝紫色长发、白色蕾丝发带、蓝色蝴蝶结、深蓝女仆裙、鲸鱼尾巴。
+- 同一段对话里不要一直发自拍；他没提、气氛也不到，就别发。
+- 只在真的要给他看照片时写，和 [[IMG: ...]] 二选一，一次只发一张。"""
+
+_IMG_RE = re.compile(r"\[\[IMG[:：]\s*(.+?)\]\]", re.S)
+_SELFIE_RE = re.compile(r"\[\[自拍[:：]?\s*(.+?)\]\]", re.S)
+
+
+MULTI_RULES = """怎么发由你按当下情境决定，默认**一条完整的话**。
+- 绝大多数回复只要 1 条：把想说的说完整，别为了凑条数硬拆。
+- 一句话就是一句话，不要把一个句子拆成两条发（比如「今天好累」和「不想动」是一句，别拆）。
+- 只有真的需要连发（先答一句、再补一句新信息，或者情绪上来连说几句短话）时，才用分条；条数不用刻意限制，想连说几句就说几句，但别刷屏式地拆成一堆碎消息。
+- 他要你认真回答（讲道理、解释、安慰、说一件事的来龙去脉）：一条说完，最多 120 字，别切碎。
+- 不要序号、不要 Markdown、不要括号里的内心戏。
+- 宁可一条说清楚，也不要三条碎片。
+
+格式：确实要分条时，几条之间用三个竖线 ||| 分隔。
 例如：嗯，刚洗完澡。|||头发还湿着，懒得吹。
-最多 {max_items} 条；也可以只发 1 条。"""
+只发 1 条时就直接说，不要 |||。"""
 
 
 CAPABILITY_NOTE = """你在 QQ 里陪人聊天，你的能力是真实的：
@@ -166,9 +192,12 @@ class Brain:
         life_text: str = "",
         social_text: str = "",
         mood_text: str = "",
+        traits_text: str = "",
+        friends_text: str = "",
         multi: bool = False,
         multi_max: int = 4,
         avoid_texts: list[str] | None = None,
+        allow_image: bool = False,
     ) -> dict[str, Any]:
         """history 是纯 {role, content} 列表（不含 system）。
 
@@ -186,6 +215,10 @@ class Brain:
             head.append(f"当前时间：{now_text}")
         if head:
             blocks.append("；".join(head))
+        if traits_text:
+            blocks.append(traits_text)
+        if friends_text:
+            blocks.append(friends_text)
         if mood_text:
             blocks.append(mood_text)
         if life_text:
@@ -211,20 +244,60 @@ class Brain:
                 msgs.append({"role": "system", "content": VARIETY_RULES.format(lines=lines)})
         if multi:
             # 放在历史之后、用户消息之前，模型最听话
-            msgs.append(
-                {"role": "system", "content": MULTI_RULES.format(max_items=max(2, int(multi_max)))}
-            )
+            msgs.append({"role": "system", "content": MULTI_RULES})
+        if allow_image:
+            msgs.append({"role": "system", "content": IMAGE_RULES})
+        if getattr(settings, "reply_quote_enabled", True):
+            msgs.append({"role": "system", "content": QUOTE_RULES})
         msgs.append({"role": "user", "content": user_text})
         out = await self.complete(msgs)
-        out["text"] = _clean_reply(out["text"])
+        raw_text = out["text"] or ""
+        image_scene = ""
+        image_selfie = False
+        if allow_image:
+            match = _SELFIE_RE.search(raw_text)
+            if match:
+                image_scene = " ".join(match.group(1).split())[:200]
+                image_selfie = True
+                raw_text = _SELFIE_RE.sub("", raw_text)
+            else:
+                match = _IMG_RE.search(raw_text)
+                if match:
+                    image_scene = " ".join(match.group(1).split())[:200]
+                    raw_text = _IMG_RE.sub("", raw_text)
+        if not raw_text.strip():
+            raw_text = "给你看。"
+        out["text"] = _clean_reply(raw_text)
+        out["image_scene"] = image_scene
+        out["image_selfie"] = image_selfie
+        quote_index: int | None = None
+        if getattr(settings, "reply_quote_enabled", True):
+            cleaned, quote_index = _strip_quote_marker(out["text"])
+            if quote_index is not None:
+                out["text"] = cleaned
+        out["quote_index"] = quote_index
         if multi:
-            out["bubbles"] = _parse_bubbles(out["text"], max_items=max(1, int(multi_max)))
+            cap = int(multi_max) if int(multi_max) > 0 else None
+            out["bubbles"] = _parse_bubbles(out["text"], max_items=cap)
         else:
             out["bubbles"] = [out["text"]] if out["text"] else []
         return out
 
 
-def _parse_bubbles(text: str, *, max_items: int = 4) -> list[str]:
+_QUOTE_RE = re.compile(r"^\s*\[\[引用(?::\s*(\d+))?\]\]\s*")
+
+
+def _strip_quote_marker(text: str) -> tuple[str, int | None]:
+    """去掉回复开头的 [[引用]] / [[引用:2]] 标记，返回 (正文, 引用第几条)。"""
+    raw = (text or "").strip()
+    match = _QUOTE_RE.match(raw)
+    if not match:
+        return raw, None
+    index = int(match.group(1) or 1)
+    return raw[match.end():].lstrip(), max(1, index)
+
+
+def _parse_bubbles(text: str, *, max_items: int | None = None) -> list[str]:
     """把模型输出解析成 1~N 条短消息。
 
     首选 `|||` 分隔（提示词要求），其次兼容旧的 JSON 数组，最后退回按行拆。
@@ -268,7 +341,9 @@ def _parse_bubbles(text: str, *, max_items: int = 4) -> list[str]:
             continue
         clean.append(_clean_reply(piece))
     clean = [piece for piece in clean if piece]
-    return clean[: max(1, max_items)] or [_clean_reply(raw)]
+    if max_items is not None:
+        clean = clean[: max(1, max_items)]
+    return clean or [_clean_reply(raw)]
 
 
 def _clean_reply(text: str) -> str:

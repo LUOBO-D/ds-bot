@@ -39,11 +39,14 @@
 | --- | --- | --- |
 | `AUTO_REPLY_ENABLED` | `1` | 总开关 |
 | `AUTO_REPLY_ALLOWLIST` | 空 | 空 = 不回复；`*`/`all`/`friends` = 所有好友；或逗号分隔 QQ 号 |
-| `AUTO_REPLY_GAP` | `1.2` | 连续消息的静默去抖（秒） |
+| `AUTO_REPLY_GAP` | `2.5` | 静默去抖下限（秒）；新消息会重置计时 |
+| `AUTO_REPLY_THINK_MIN` | `2.0` | 思考时间下限（秒）：收到消息后先等这么久再回 |
+| `AUTO_REPLY_THINK_MAX` | `3.0` | 思考时间上限（秒）；窗口内又来消息会重新计时并把新消息并进同一次回复 |
+| `REPLY_QUOTE_ENABLED` | `1` | 允许她引用对方消息回复（她在回复开头写 `[[引用]]` / `[[引用:2]]` 触发） |
 | `AUTO_REPLY_HISTORY` | `80` | 注入的历史条数（每条消息约 20~60 tokens，调大更连贯、更贵） |
 | `AUTO_REPLY_STALE` | `90` | 超过该秒数的积压消息不再回复 |
 | `REPLY_MULTI` | `1` | 允许分条发送 |
-| `REPLY_MULTI_MAX` | `4` | 最多几条 |
+| `REPLY_MULTI_MAX` | `0` | 一次回复最多拆几条；`0` = 不限 |
 | `REPLY_BUBBLE_DELAY_MIN/MAX` | `0.5`/`1.6` | 条与条之间的随机间隔 |
 | `FOLLOWUP_ENABLED` | `1` | 回复后偶尔补一句 |
 | `FOLLOWUP_PROBABILITY` | `0.3` | 补话概率 |
@@ -70,6 +73,19 @@
 | `LIFE_EVENT_PROBABILITY` | `0.5` | 每拍推进生活事件的概率 |
 | `NIGHTLY_TIME` | `23:30` | 每日日结时间 |
 | `MOOD_BASE_VALENCE/AROUSAL/ENERGY` | `0.44/0.38/0.70` | 情绪基线 |
+| `MOOD_STYLE_MAP` | `1` | 情绪直接影响说话方式（低落时不撒娇、变短、停顿） |
+| `MOOD_FATIGUE_PER_REPLY` | `0.012` | 每回一条消息消耗的精力 |
+| `MOOD_EPISODE_ENABLED` | `1` | 允许进入「这几天不太好」的情绪期 |
+| `MOOD_EPISODE_THRESHOLD` | `0.34` | 愉悦度低于该值触发情绪期 |
+| `MOOD_EPISODE_MIN_HOURS` / `MAX_HOURS` | `6` / `48` | 情绪期时长区间（有理由、到期自动回暖） |
+| `PERSONALITY_ENABLED` | `1` | 五维性格 + 年轮留痕 |
+| `TRAITS_NOW_GAIN` | `1.0` | 单次互动推动「当前状态」的倍率 |
+| `TRAITS_BASE_GAIN` | `0.6` | 重事件推动「性格基线」的倍率 |
+| `TRAITS_MARK_MIN_WEIGHT` | `0.6` | 权重低于该值不刻年轮 |
+| `TRAITS_MAX_DEV` | `25` | 性格基线最多偏离出厂值多少 |
+| `TRAITS_NOW_RETURN` | `0.06` | 每天「当前状态」朝基线回的比例 |
+| `TRAITS_BASE_QUIET_DAYS` / `BASE_RETURN` | `60` / `0.2` | 多少天没重事件后、基线极慢回出厂 |
+| `TRAITS_NARRATIVE_DAYS` | `7` | 每隔几天写一段自我叙事 |
 
 ## 5. 识图 / 语音 / 表情包
 
@@ -122,6 +138,6 @@
 ## 8. 调参建议
 
 - **想省钱**：把 `FOLLOWUP_ENABLED=0`、`MEMORY_MEMO_MIN_MSGS` 调大、`LIFE_TICK_SECONDS` 调大。
-- **想更像人**：`BRAIN_PRESENCE_PENALTY` 保持 0.3–0.5，`REPLY_MULTI_MAX` 3–4，角色卡里别写死条数。
+- **想更像人**：`BRAIN_PRESENCE_PENALTY` 保持 0.3–0.5，`REPLY_MULTI_MAX` 建议 `0`（不限条数），角色卡里别写死条数。
 - **想更稳**：`AUTO_REPLY_ALLOWLIST` 只填自己，`PROACTIVE_ENABLED=0`，`BRAIN_MAX_CONCURRENCY=2`。
 - **多人同时聊**：`BRAIN_MAX_CONCURRENCY` 4–8；发送侧由 `QB_*` 节流兜底，别调太快。

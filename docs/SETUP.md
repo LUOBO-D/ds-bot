@@ -1,20 +1,7 @@
-# 完整部署（有基础看这里）
+# 从零安装
 
-> 目标：一台 Windows 电脑，从空目录跑到「QQ 里有人跟她聊天」，并能自己改配置、接别的模型。
+> 目标：一台 Windows 电脑，从空目录跑到「QQ 里有人跟她聊天」。
 > 全程约 20–30 分钟，其中 NapCat 安装 + 扫码最容易卡。
->
-> **完全没装过 Python / 不想看原理？先看 [QUICKSTART.md](QUICKSTART.md)**——照着点鼠标 10 分钟能用上，再回来补这一份。
-
-## 懒人路径（一键，和 QUICKSTART 一样）
-
-1. `git clone https://github.com/LUOBO-D/ds-bot && cd ds-bot`
-2. 双击 `install.bat`：建环境、装依赖、生成 `.env`、下载 NapCat 安装器
-3. 双击 `napcat-onekey\NapCatInstaller.exe` 装好 QQ + NapCat
-4. 记事本打开 `.env`，填 `DEEPSEEK_API_KEY`（和 `AUTO_REPLY_ALLOWLIST`）
-5. 双击 `start.bat`；扫码登录小号；在 WebUI 加反向 WS `ws://127.0.0.1:3001/onebot/v11/ws`
-6. 用大号私聊小号，能看到 `gateway connected` 就成功了
-
-下面是从零手动的详细步骤，遇到问题时对照。
 
 ## 0. 前置清单
 

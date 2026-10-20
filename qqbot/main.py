@@ -9,9 +9,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
@@ -29,6 +31,7 @@ from .emotion import Mood
 from .keeper import Keeper
 from .life import LifeService
 from .memory import MemoryService
+from .personality import Personality
 from .proactive import Proactive
 from .qzone import QzoneClient, QzoneError
 from .security import limiter, require_token
@@ -37,6 +40,8 @@ from .stickers import StickerBook
 from .store import Store
 from .vision import Vision, _ocr_text
 from .asr import Asr
+from .imagegen import ImageGen
+from .profile import ProfileService
 from .tools import Actions, list_stickers
 
 logging.basicConfig(
@@ -52,17 +57,26 @@ actions = Actions(ob, store)
 qz = QzoneClient()
 brain = Brain()
 mood = Mood(store)
-memory = MemoryService(store, brain, mood)
+personality = Personality(store, brain=brain)
+memory = MemoryService(store, brain, mood, personality=personality)
 life = LifeService(store, brain, mood)
 vision = Vision(store, settings, ocr=actions.ocr)
 asr = Asr(settings)
-proactive = Proactive(store, actions, brain=brain, mood=mood, life=life, qzone=qz)
+imagegen = ImageGen()
+proactive = Proactive(
+    store, actions, brain=brain, mood=mood, life=life, qzone=qz, imagegen=imagegen
+)
 social = Social(store, qz, life=life, mood=mood, onebot=ob, brain=brain)
 stickerbook = StickerBook(store, brain, actions, vision=vision, mood=mood)
-keeper = Keeper(store, mood, life, memory, proactive=proactive, social=social)
+profiles = ProfileService(store, actions, brain=brain, mood=mood, life=life)
+keeper = Keeper(
+    store, mood, life, memory, proactive=proactive, social=social, personality=personality,
+    profile=profiles,
+)
 autoreply = AutoReply(
     ob, store, actions, brain, memory=memory, mood=mood, life=life,
     proactive=proactive, vision=vision, social=social, stickers=stickerbook, asr=asr,
+    personality=personality, imagegen=imagegen,
 )
 subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
 
@@ -248,6 +262,13 @@ class MoodBody(BaseModel):
     note: str | None = None
 
 
+class TraitMarkBody(BaseModel):
+    deltas: dict[str, float]
+    note: str = ""
+    weight: float = 1.0
+    source: str = "manual"
+
+
 class ReflectBody(BaseModel):
     user_id: int = 0
     text: str
@@ -303,6 +324,8 @@ async def state() -> dict[str, Any]:
         "qzone": {"base": settings.qzone_base},
         "mind": {
             "mood": mood.snapshot(),
+        "personality": personality.snapshot(),
+        "profile": profiles.status(),
             "keeper": keeper.stats,
             "memory": memory.stats,
             "life": life.stats,
@@ -464,9 +487,11 @@ async def brain_status() -> dict[str, Any]:
         "max_inflight": brain.max_inflight,
         "max_concurrency": settings.brain_max_concurrency,
         "gap": settings.autoreply_gap,
+        "think": {"min": settings.autoreply_think_min, "max": settings.autoreply_think_max},
         "history": settings.autoreply_history,
         "persona": personas.active(),
         "persona_name": personas.name(),
+        "friends_block": await autoreply._friends_list_block(),
         "pending": {str(k): v["parts"] for k, v in autoreply._pending.items()},
         "stats": autoreply.stats,
     }
@@ -563,12 +588,38 @@ async def personas_switch(body: PersonaBody, actor: Actor = "api") -> dict[str, 
     return {"ok": True, "active": slug, "name": personas.name(slug)}
 
 
+@app.get("/api/profile", tags=["心灵"], dependencies=[Depends(require_token)])
+async def profile_get() -> dict[str, Any]:
+    """她自己的 QQ 个人主页：昵称、个性签名、头像。"""
+    data = await profiles.current()
+    data["info"] = profiles.status()
+    return data
+
+
+@app.post("/api/profile/signature", tags=["心灵"], dependencies=[Depends(require_token)])
+async def profile_signature(body: dict[str, Any], actor: Actor = "api") -> dict[str, Any]:
+    text = str(body.get("text") or "").strip()
+    out = await profiles.set_signature(text, actor=actor)
+    if not out.get("ok"):
+        raise HTTPException(status_code=502, detail=out.get("error") or "update failed")
+    return out
+
+
+@app.post("/api/profile/refresh", tags=["心灵"], dependencies=[Depends(require_token)])
+async def profile_refresh(force: bool = True, actor: Actor = "api") -> dict[str, Any]:
+    """让她自己写一条新的个性签名。"""
+    out = await profiles.tick(force=force)
+    store.audit(actor, "profile.refresh", {"force": force}, out, bool(out.get("ok")))
+    return out
+
+
 @app.get("/api/mind", tags=["心灵"], dependencies=[Depends(require_token)])
 async def mind() -> dict[str, Any]:
     """一眼看她的内在状态：心情、心跳、记忆、生活线。"""
     return {
         "persona": {"slug": personas.active(), "name": personas.name()},
         "mood": mood.snapshot(),
+        "personality": personality.snapshot(),
         "keeper": keeper.status(),
         "memory": memory.stats,
         "life": life.status(),
@@ -589,6 +640,38 @@ async def mood_set(body: MoodBody, actor: Actor = "api") -> dict[str, Any]:
     mood.set(valence=body.valence, arousal=body.arousal, energy=body.energy, note=body.note)
     store.audit(actor, "mood.set", body.model_dump(), mood.snapshot(), True)
     return mood.snapshot()
+
+
+@app.get("/api/traits", tags=["心灵"], dependencies=[Depends(require_token)])
+async def traits_get() -> dict[str, Any]:
+    return personality.snapshot()
+
+
+@app.post("/api/traits/mark", tags=["心灵"], dependencies=[Depends(require_token)])
+async def traits_mark(body: TraitMarkBody, actor: Actor = "api") -> dict[str, Any]:
+    out = personality.nudge(body.deltas, source=body.source, note=body.note, weight=body.weight)
+    store.audit(actor, "traits.mark", body.model_dump(), out, True)
+    return out
+
+
+@app.post("/api/traits/settle", tags=["心灵"], dependencies=[Depends(require_token)])
+async def traits_settle(days: float = 1.0) -> dict[str, Any]:
+    return personality.settle(days=days)
+
+
+@app.post("/api/traits/narrative", tags=["心灵"], dependencies=[Depends(require_token)])
+async def traits_narrative(force: bool = True) -> dict[str, Any]:
+    return await personality.write_narrative(force=force)
+
+
+@app.post("/api/traits/rollback/{mark_id}", tags=["心灵"], dependencies=[Depends(require_token)])
+async def traits_rollback(mark_id: int) -> dict[str, Any]:
+    return personality.rollback(mark_id)
+
+
+@app.post("/api/traits/reset", tags=["心灵"], dependencies=[Depends(require_token)])
+async def traits_reset() -> dict[str, Any]:
+    return personality.reset()
 
 
 @app.get("/api/memory/events", tags=["心灵"], dependencies=[Depends(require_token)])
@@ -688,6 +771,24 @@ async def keeper_tick(force: bool = False, actor: Actor = "api") -> dict[str, An
     return out
 
 
+@app.get("/api/imagegen", tags=["心灵"], dependencies=[Depends(require_token)])
+async def imagegen_status() -> dict[str, Any]:
+    """文生图的状态与最近一次的结果。"""
+    return imagegen.status()
+
+
+@app.post("/api/proactive/message", tags=["心灵"], dependencies=[Depends(require_token)])
+async def proactive_message(
+    force: bool = True,
+    dry_run: bool = False,
+    actor: Actor = "api",
+) -> dict[str, Any]:
+    """让她主动发一条私聊；dry_run=True 只生成文案/图片，不发送。"""
+    out = await proactive.send_message(reason="manual", force=force, dry_run=dry_run)
+    store.audit(actor, "proactive.message", {"force": force, "dry_run": dry_run}, out, bool(out.get("ok")))
+    return out
+
+
 @app.get("/api/proactive", tags=["心灵"], dependencies=[Depends(require_token)])
 async def proactive_status() -> dict[str, Any]:
     """主动行为的开关、频率限制与最近动作。"""
@@ -726,6 +827,31 @@ async def account() -> dict[str, Any]:
         "login": await ob.get_login_info(),
         "status": await ob.get_status(),
     }
+
+
+class AvatarBody(BaseModel):
+    file: str
+
+
+@app.post("/api/account/avatar", tags=["基础"], dependencies=[Depends(require_token)])
+async def set_avatar(body: AvatarBody, actor: Actor = "api") -> dict[str, Any]:
+    """把本机图片设成这个 QQ 的头像。body: {"file": "assets/personas/xxx.png"}"""
+    path = Path(body.file)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"文件不存在：{path}")
+    data = path.read_bytes()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="图片超过 8MB")
+    payload = "base64://" + base64.b64encode(data).decode()
+    try:
+        result = await ob.call("set_qq_avatar", file=payload)
+    except OneBotError as exc:
+        store.audit(actor, "account.avatar", {"file": str(path)}, {"error": str(exc)}, False)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    store.audit(actor, "account.avatar", {"file": str(path)}, {"result": result}, True)
+    return {"ok": True, "file": str(path), "result": result}
 
 
 @app.get("/api/friends", tags=["查询"], dependencies=[Depends(require_token)])

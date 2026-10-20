@@ -10,7 +10,10 @@
 | L0.5 当天备忘 | 今天一整天都聊了什么 | `day_memo` 滚动压缩 | 按天，随对话增量更新 |
 | L1 情节记忆 | 我们之间发生过什么 | `events` 事件卡 | 长期 |
 | L2 语义记忆 | 关于他，我知道什么 | `memories` 事实 | 长期，带权重 |
+| L2.5 性格 | 她本来是个什么样的人 | `kv traits:<slug>` + `trait_marks` | 周～月，重事件留痕 |
 | L3 生活线 | 她今天在过什么日子 | `life_log` + `day_summary` | 按天 |
+
+补充：情绪层（`emotion.py`）是分钟～小时；性格层（`personality.py`）是周～月，两者都按角色隔离。
 
 补充：`memories` 同时承担「显式记住」（用户说「记住…」）和「反思提炼」（事后由模型总结），用 `kind` 与 `source` 区分。
 
@@ -125,6 +128,8 @@ MOOD_BASE_VALENCE=0.44
 
 ## 隐私边界（不同好友之间）
 
+好友名单（昵称/备注 + QQ 号）会整体注入每次聊天，让她知道「自己有哪些朋友」；但名单里没有任何聊天内容，别人的私聊与日结依然按人隔离。
+
 她是一个「人」，所以情绪、生活线、空间动态是共享的；但**私密内容按 QQ 号隔离**。
 
 | 数据 | 范围 | 说明 |
@@ -139,3 +144,24 @@ MOOD_BASE_VALENCE=0.44
 - 23:30 心跳：先跑全局日结（`nightly(day)`，生活线专属 prompt），再对当天聊过的人逐个跑 `nightly(day, uid=...)`，各写一条 `day_notes`。
 - 手动补跑：`POST /api/memory/nightly?uid=10001`。
 - 反向检查：`/api/chat` 返回的 `context.memory_text` 里不该出现别的 QQ 号相关的事实或日结。
+
+## 11. 性格层（`qqbot/personality.py`）
+
+| 维度 | 出厂 | 含义 |
+| --- | --- | --- |
+| closeness 亲密感 | 50 | 愿不愿意主动靠近 |
+| talkativeness 话量 | 55 | 爱不爱说、说多说少 |
+| sensitivity 敏感度 | 45 | 对语气与细节的在意 |
+| tsundere 傲娇 | 60 | 嘴硬程度 |
+| stability 稳定性 | 65 | 情绪起伏与恢复速度 |
+
+- 日常互动只推「当前状态」，每天按 `TRAITS_NOW_RETURN` 回基线；
+- 分量重的事件（权重 ≥ `TRAITS_MARK_MIN_WEIGHT`）才推「性格基线」，单次 ±2 封顶、累计偏离出厂 ±25，并写一条 `trait_marks` 年轮；
+- 60 天没有新事件，基线极慢回出厂；管理员可单条回滚或整体 reset；
+- 每 7 天写一段「我最近怎么了」的自我叙事，注入聊天（`TRAITS_NARRATIVE_DAYS`）。
+
+情绪期（episode）：愉悦度跌破阈值时进入，带一句理由，持续 6~48 小时（越长越深），
+到期自动回暖；期间正向安慰打折，避免一句「别难过」就满血复活。
+
+接口：`GET /api/traits`、`POST /api/traits/mark|settle|narrative|rollback/{id}|reset`；
+`/api/mood` 现在额外返回 `episode` 与 `style`（`playful/short/silent/tired/...`）。
